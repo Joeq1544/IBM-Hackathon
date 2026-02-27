@@ -1,20 +1,19 @@
 from fastapi import APIRouter, HTTPException
-from api.schemas import UserSubmission, CreditReportResponse
-from agents.orchestrator import Orchestrator
+from api.schemas import UserSubmission, OrchestrateResponse
+from services.orchestrate_client import invoke_manager_agent
 
 router = APIRouter()
 
 
-@router.post("/analyze", response_model=CreditReportResponse)
+@router.post("/analyze", response_model=OrchestrateResponse)
 async def analyze_credit(submission: UserSubmission):
     """
-    Main endpoint. Triggers the full agentic pipeline:
-    DataCollector -> CreditAnalyzer -> BiasAuditor -> Explainability
+    Sends the user's financial profile to the Manager Agent in watsonx Orchestrate.
+    Orchestrate handles all sub-agent routing internally.
     """
     try:
-        orchestrator = Orchestrator()
-        result = await orchestrator.run(submission.model_dump())
-        return CreditReportResponse(user_id=submission.user_id, **result)
+        result = await invoke_manager_agent(submission.model_dump())
+        return OrchestrateResponse(user_id=submission.user_id, raw=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

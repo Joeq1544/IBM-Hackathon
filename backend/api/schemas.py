@@ -24,7 +24,14 @@ class UserSubmission(BaseModel):
     ethnicity: Optional[str] = None
 
 
+class OrchestrateResponse(BaseModel):
+    """Raw response envelope from the watsonx Orchestrate Manager Agent."""
+    user_id: str
+    raw: dict
+
+
 class CreditReportResponse(BaseModel):
+    """Parsed, structured credit report (populated from Orchestrate response)."""
     user_id: str
     score: int
     risk_tier: str

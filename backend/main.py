@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import credit, user, audit
+from api.routes import credit, user, audit, data
 
 app = FastAPI(
     title="Credit Path Finder API",
@@ -19,6 +19,7 @@ app.add_middleware(
 app.include_router(credit.router, prefix="/api/credit", tags=["Credit"])
 app.include_router(user.router, prefix="/api/user", tags=["User"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
+app.include_router(data.router, prefix="/api/data", tags=["Data"])
 
 
 @app.get("/health")
