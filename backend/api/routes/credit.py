@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, HTTPException
 from api.schemas import UserSubmission, OrchestrateResponse
 from services.orchestrate_client import invoke_manager_agent
@@ -12,8 +13,11 @@ async def analyze_credit(submission: UserSubmission):
     Orchestrate handles all sub-agent routing internally.
     """
     try:
-        result = await invoke_manager_agent(submission.model_dump())
-        return OrchestrateResponse(user_id=submission.user_id, raw=result)
+        user_id = str(uuid.uuid4())
+        data = submission.model_dump()
+        data["user_id"] = user_id
+        result = await invoke_manager_agent(data)
+        return OrchestrateResponse(user_id=user_id, raw=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

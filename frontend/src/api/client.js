@@ -5,11 +5,11 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-export const analyzeCredit = (userSubmission) =>
-  api.post('/credit/analyze', userSubmission).then((r) => r.data);
+export const startChat = (name = '', email = '') =>
+  api.post('/chat/start', { name, email }).then(r => r.data);
 
-export const getUser = (userId) =>
-  api.get(`/user/${userId}`).then((r) => r.data);
+export const sendMessage = (session_id, message) =>
+  api.post('/chat/message', { session_id, message }).then(r => r.data);
 
 export const getBiasReport = (userId) =>
-  api.get(`/audit/${userId}`).then((r) => r.data);
+  api.get(`/audit/${userId}`).then(r => r.data);

@@ -3,7 +3,6 @@ from typing import Optional, List
 
 
 class UserSubmission(BaseModel):
-    user_id: str
     name: str
     email: str
     # Alternate data inputs

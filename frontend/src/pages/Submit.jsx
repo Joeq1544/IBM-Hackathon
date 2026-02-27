@@ -5,7 +5,7 @@ import BiasAuditPanel from '../components/BiasAuditPanel';
 import ExplainabilityView from '../components/ExplainabilityView';
 
 function Submit() {
-  const [form, setForm] = useState({ user_id: '', name: '', email: '' });
+  const [form, setForm] = useState({ name: '', email: '' });
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -31,7 +31,6 @@ function Submit() {
     <div>
       <h2>Submit Your Financial Profile</h2>
       <form onSubmit={handleSubmit}>
-        <input name="user_id" placeholder="User ID" onChange={handleChange} required />
         <input name="name" placeholder="Full Name" onChange={handleChange} required />
         <input name="email" placeholder="Email" onChange={handleChange} required />
         <button type="submit" disabled={loading}>
