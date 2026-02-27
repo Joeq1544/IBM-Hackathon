@@ -1,35 +1,23 @@
 import uuid
+import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List
-from services.orchestrate_client import chat_with_agent
+from services.orchestrate_client import send_message_to_agent
+from services.watsonx_client import audit_for_bias
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory session store: session_id -> list of messages
+# session_id -> {messages, thread_id, name}
 _sessions: dict = {}
 
-SYSTEM_PROMPT = """You are CreditPath, a friendly AI financial advisor helping students
-and thin-file individuals build their Financial Resume. You have access to specialist
-agents for data collection, credit analysis, bias auditing, and explanation.
-
-Your job is to have a natural conversation to collect the user's financial information,
-then when you have enough, run the full credit analysis pipeline and present the results.
-
-Start by greeting the user warmly and asking for their name. Then ask about:
-- Rent payments (amount, how many months, how often on time)
-- Utility bills (electric, gas, internet — how consistent)
-- Monthly income and expenses
-- Education (enrolled in school? GPA?)
-- Employment (working? how long?)
-
-Ask one topic at a time. Be encouraging and conversational — not clinical.
-When you have collected all the information, tell the user you're running their
-analysis, then return the full credit report in a clear, friendly format including:
-- Their score (300-850) and what tier it means
-- What they did well
-- What to improve
-- A confirmation that the result was checked for fairness"""
+GREETING_TEMPLATE = (
+    "Hi{name_part}! I'm CreditPath, your AI financial advisor. "
+    "I'm here to help build your Financial Resume using alternate credit data — "
+    "so even without a credit card or loan history, we can show lenders who you really are. "
+    "{followup}"
+)
 
 
 class ChatStart(BaseModel):
@@ -51,21 +39,20 @@ class ChatResponse(BaseModel):
 @router.post("/start", response_model=ChatResponse)
 async def start_chat(body: ChatStart):
     session_id = str(uuid.uuid4())
-    greeting = (
-        f"Hi{' ' + body.name if body.name else ''}! I'm CreditPath, your AI financial advisor. "
-        "I'm here to help build your Financial Resume using alternate credit data — "
-        "so even without a credit card or loan history, we can show lenders who you really are. "
-        "Let's get started. Can you tell me your name?"
-        if not body.name
-        else f"Hi {body.name}! I'm CreditPath, your AI financial advisor. "
-        "I'm here to help build your Financial Resume using alternate credit data — "
-        "so even without a credit card or loan history, we can show lenders who you really are. "
+    name = body.name.strip()
+    name_part = f" {name}" if name else ""
+    followup = (
         "To get started, do you currently pay rent each month?"
+        if name
+        else "Can you tell me your name?"
     )
-    _sessions[session_id] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "assistant", "content": greeting},
-    ]
+    greeting = GREETING_TEMPLATE.format(name_part=name_part, followup=followup)
+
+    _sessions[session_id] = {
+        "messages": [{"role": "assistant", "content": greeting}],
+        "thread_id": None,
+        "name": name,
+    }
     return ChatResponse(session_id=session_id, reply=greeting)
 
 
@@ -74,19 +61,40 @@ async def send_message(body: ChatMessage):
     if body.session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found. Please start a new chat.")
 
-    messages = _sessions[body.session_id]
-    messages.append({"role": "user", "content": body.message})
+    session = _sessions[body.session_id]
+    session["messages"].append({"role": "user", "content": body.message})
 
+    # ── Step 1: Orchestrate Manager Agent drives the conversation ─────────────
     try:
-        reply = await chat_with_agent(messages)
+        reply, new_thread_id = await send_message_to_agent(
+            user_message=body.message,
+            thread_id=session["thread_id"],
+        )
+        session["thread_id"] = new_thread_id
     except Exception as e:
+        logger.error("Orchestrate agent failed: %s", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
 
-    messages.append({"role": "assistant", "content": reply})
-    _sessions[body.session_id] = messages
+    session["messages"].append({"role": "assistant", "content": reply})
 
+    # ── Step 2: Detect final score → run Granite Guardian bias audit ──────────
     is_final = any(phrase in reply.lower() for phrase in [
-        "your score", "credit score", "financial resume", "out of 850", "risk tier"
+        "your score", "credit score", "financial resume", "out of 850", "risk tier",
+        "/ 850", "low risk", "medium risk", "high risk",
     ])
+
+    if is_final:
+        try:
+            bias_report = await audit_for_bias(reply)
+            # Append the bias audit below the agent's score report
+            reply = (
+                f"{reply}\n\n"
+                f"---\n"
+                f"🔍 **Independent Bias Audit** *(IBM Granite Guardian)*\n"
+                f"{bias_report}"
+            )
+            session["messages"][-1]["content"] = reply
+        except Exception as e:
+            logger.warning("Bias audit failed (non-fatal): %s", repr(e))
 
     return ChatResponse(session_id=body.session_id, reply=reply, is_final=is_final)
