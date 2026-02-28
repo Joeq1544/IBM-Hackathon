@@ -2,8 +2,7 @@ import uuid
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from services.orchestrate_client import send_message_to_agent
-from services.watsonx_client import audit_for_bias
+from services.watsonx_client import chat_with_granite, audit_for_bias
 
 logger = logging.getLogger(__name__)
 
@@ -64,15 +63,11 @@ async def send_message(body: ChatMessage):
     session = _sessions[body.session_id]
     session["messages"].append({"role": "user", "content": body.message})
 
-    # ── Step 1: Orchestrate Manager Agent drives the conversation ─────────────
+    # ── Step 1: IBM Granite 3.2 Instruct drives the conversation ─────────────
     try:
-        reply, new_thread_id = await send_message_to_agent(
-            user_message=body.message,
-            thread_id=session["thread_id"],
-        )
-        session["thread_id"] = new_thread_id
+        reply = await chat_with_granite(session["messages"][:-1] + [{"role": "user", "content": body.message}])
     except Exception as e:
-        logger.error("Orchestrate agent failed: %s", repr(e))
+        logger.error("chat_with_granite failed: %s", repr(e))
         raise HTTPException(status_code=500, detail=str(e))
 
     session["messages"].append({"role": "assistant", "content": reply})

@@ -14,18 +14,25 @@ Update ORCHESTRATE_BASE_URL in .env to match your actual Orchestrate instance UR
 import time
 import httpx
 import logging
-from config import IBM_API_KEY, IBM_IAM_URL, ORCHESTRATE_BASE_URL, ORCHESTRATE_MANAGER_AGENT_ID
+from config import (
+    IBM_API_KEY, IBM_IAM_URL,
+    ORCHESTRATE_BASE_URL, ORCHESTRATE_MANAGER_AGENT_ID,
+    ORCHESTRATE_API_KEY, MCSP_TOKEN_URL,
+)
 
 logger = logging.getLogger(__name__)
 
-_token_cache: dict = {"token": None, "expires_at": 0}
+# Separate caches for IAM (used by Granite) and MCSP (used by Orchestrate)
+_iam_cache:  dict = {"token": None, "expires_at": 0}
+_mcsp_cache: dict = {"token": None, "expires_at": 0}
 
 
 async def _get_iam_token() -> str:
-    if _token_cache["token"] and time.time() < _token_cache["expires_at"] - 60:
-        return _token_cache["token"]
+    """IBM Cloud IAM token — used for watsonx.ai / Granite calls."""
+    if _iam_cache["token"] and time.time() < _iam_cache["expires_at"] - 60:
+        return _iam_cache["token"]
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             IBM_IAM_URL,
             data={
@@ -37,9 +44,24 @@ async def _get_iam_token() -> str:
         response.raise_for_status()
         data = response.json()
 
-    _token_cache["token"] = data["access_token"]
-    _token_cache["expires_at"] = time.time() + data.get("expires_in", 3600)
-    return _token_cache["token"]
+    _iam_cache["token"] = data["access_token"]
+    _iam_cache["expires_at"] = time.time() + data.get("expires_in", 3600)
+    return _iam_cache["token"]
+
+
+async def _get_orchestrate_token() -> str:
+    """
+    Return the Bearer token for calling Orchestrate.
+
+    If ORCHESTRATE_API_KEY is set, use it directly as the Bearer token —
+    the Orchestrate UI generates pre-signed tokens, not raw API keys.
+    Otherwise fall back to the standard IBM Cloud IAM token.
+    """
+    if ORCHESTRATE_API_KEY:
+        logger.debug("Using ORCHESTRATE_API_KEY directly as Bearer token")
+        return ORCHESTRATE_API_KEY
+
+    return await _get_iam_token()
 
 
 async def send_message_to_agent(user_message: str, thread_id: str | None = None) -> tuple[str, str | None]:
@@ -50,7 +72,7 @@ async def send_message_to_agent(user_message: str, thread_id: str | None = None)
     Tries Pattern 1 first (IBM SaaS /orchestrate/runs).
     Falls back to Pattern 2 (Developer Edition /chat/completions) if Pattern 1 returns 404.
     """
-    token = await _get_iam_token()
+    token = await _get_orchestrate_token()
     base = ORCHESTRATE_BASE_URL.rstrip("/")
     headers = {
         "Authorization": f"Bearer {token}",
@@ -58,51 +80,43 @@ async def send_message_to_agent(user_message: str, thread_id: str | None = None)
         "Accept": "application/json",
     }
 
-    # ── Pattern 1: IBM Cloud SaaS ─────────────────────────────────────────────
-    # POST {BASE_URL}/orchestrate/runs
-    # Agent ID in body, thread_id for multi-turn continuity
-    url_1 = f"{base}/orchestrate/runs"
-    body_1: dict = {
+    # Build all candidate (url, body) pairs to try in order
+    runs_body: dict = {
         "message": {"role": "user", "content": user_message},
         "agent_id": ORCHESTRATE_MANAGER_AGENT_ID,
         "environment_id": "draft",
     }
     if thread_id:
-        body_1["thread_id"] = thread_id
+        runs_body["thread_id"] = thread_id
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        r1 = await client.post(url_1, headers=headers, json=body_1)
-
-    if r1.is_success:
-        data = r1.json()
-        logger.info("Orchestrate Pattern 1 succeeded")
-        new_thread_id = data.get("thread_id", thread_id)
-        return _extract_reply(data), new_thread_id
-
-    logger.warning("Pattern 1 (%s) → %d: %s", url_1, r1.status_code, r1.text[:200])
-
-    # ── Pattern 2: Developer Edition / local / alternative cloud layout ───────
-    # POST {BASE_URL}/{AGENT_ID}/chat/completions
-    # Full messages array in body (OpenAI-compatible)
-    url_2 = f"{base}/{ORCHESTRATE_MANAGER_AGENT_ID}/chat/completions"
-    body_2 = {
+    chat_body = {
         "stream": False,
         "messages": [{"role": "user", "content": user_message}],
     }
 
+    candidates = [
+        ("v1/runs",       f"{base}/v1/orchestrate/runs",                                       runs_body),
+        ("v1/chat",       f"{base}/v1/agents/{ORCHESTRATE_MANAGER_AGENT_ID}/chat/completions", chat_body),
+        ("api/v1/runs",   f"{base}/api/v1/orchestrate/runs",                                   runs_body),
+        ("api/v1/chat",   f"{base}/api/v1/orchestrate/{ORCHESTRATE_MANAGER_AGENT_ID}/chat/completions", chat_body),
+        ("bare/runs",     f"{base}/orchestrate/runs",                                          runs_body),
+        ("bare/chat",     f"{base}/{ORCHESTRATE_MANAGER_AGENT_ID}/chat/completions",           chat_body),
+    ]
+
+    last_response = None
     async with httpx.AsyncClient(timeout=120.0) as client:
-        r2 = await client.post(url_2, headers=headers, json=body_2)
+        for label, url, body in candidates:
+            r = await client.post(url, headers=headers, json=body)
+            if r.is_success:
+                data = r.json()
+                logger.info("Orchestrate succeeded with pattern '%s': %s", label, url)
+                new_thread_id = data.get("thread_id", thread_id)
+                return _extract_reply(data), new_thread_id
+            logger.warning("  [%s] %s → %d: %s", label, url, r.status_code, r.text[:120])
+            last_response = r
 
-    if r2.is_success:
-        data = r2.json()
-        logger.info("Orchestrate Pattern 2 succeeded")
-        return _extract_reply(data), thread_id
-
-    logger.error("Pattern 2 (%s) → %d: %s", url_2, r2.status_code, r2.text[:200])
-
-    # Both patterns failed — raise the most recent error
-    r2.raise_for_status()
-    return "", thread_id  # unreachable, but satisfies type checker
+    last_response.raise_for_status()
+    return "", thread_id
 
 
 def _extract_reply(data: dict) -> str:
