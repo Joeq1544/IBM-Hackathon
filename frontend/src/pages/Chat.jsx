@@ -4,55 +4,70 @@ import { startChat, sendMessage } from '../api/client';
 
 function MirrorLakeLogo({ size = 32 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="24" cy="24" r="24" fill="url(#chatLogoGrad)" />
-      {/* Lake — large oval filling the whole circle */}
-      <ellipse cx="24" cy="28" rx="21" ry="16" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.45)" strokeWidth="0.9" />
-      {/* Subtle inner shore highlight */}
-      <ellipse cx="24" cy="28" rx="20" ry="15" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.7" />
-      {/* Fountain base — centered in the lake */}
-      <circle cx="24" cy="28" r="2.8" fill="rgba(255,255,255,0.5)" />
-      <circle cx="24" cy="28" r="1.3" fill="rgba(255,255,255,0.78)" />
-      {/* Center jet — tallest, straight up */}
-      <path d="M 24 25 Q 24 16 24 7" stroke="white" strokeWidth="1.9" fill="none" strokeLinecap="round" strokeOpacity="0.93" />
-      <ellipse cx="24" cy="6" rx="1.6" ry="2.2" fill="rgba(255,255,255,0.82)" />
-      {/* Inner arcing jets left & right */}
-      <path d="M 23 25 Q 17 17 13 21" stroke="white" strokeWidth="1.25" fill="none" strokeLinecap="round" strokeOpacity="0.83" />
-      <path d="M 25 25 Q 31 17 35 21" stroke="white" strokeWidth="1.25" fill="none" strokeLinecap="round" strokeOpacity="0.83" />
-      {/* Outer arcing jets */}
-      <path d="M 22.5 26 Q 13 17 8 22" stroke="white" strokeWidth="0.85" fill="none" strokeLinecap="round" strokeOpacity="0.56" />
-      <path d="M 25.5 26 Q 35 17 40 22" stroke="white" strokeWidth="0.85" fill="none" strokeLinecap="round" strokeOpacity="0.56" />
-      {/* Concentric ripples centered at fountain */}
-      <ellipse cx="24" cy="28" rx="4.5" ry="3" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.7" />
-      <ellipse cx="24" cy="28" rx="9.5" ry="6.5" fill="none" stroke="rgba(255,255,255,0.26)" strokeWidth="0.6" />
-      <ellipse cx="24" cy="28" rx="16" ry="11" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
-      {/* Reflection of jets in lower lake — faded, inverted */}
-      <path d="M 24 29 Q 24 36 24 40" stroke="rgba(255,255,255,0.28)" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      <path d="M 23 29 Q 17 34 14 33" stroke="rgba(255,255,255,0.19)" strokeWidth="0.78" fill="none" strokeLinecap="round" />
-      <path d="M 25 29 Q 31 34 34 33" stroke="rgba(255,255,255,0.19)" strokeWidth="0.78" fill="none" strokeLinecap="round" />
-      <defs>
-        <linearGradient id="chatLogoGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#BB0000" />
-          <stop offset="100%" stopColor="#CC0000" />
-        </linearGradient>
-      </defs>
-    </svg>
+    <img src="/logo.png" alt="Mirror Lake Credit" width={size} height={size} style={{ objectFit: 'contain', display: 'block' }} />
   );
 }
 
 function AgentAvatar() {
   return (
-    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #BB0000, #CC0000)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <svg width="16" height="16" viewBox="0 0 48 48" fill="none">
-        <ellipse cx="24" cy="28" rx="21" ry="16" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
-        <circle cx="24" cy="28" r="3" fill="rgba(255,255,255,0.55)" />
-        <path d="M 24 25 Q 24 16 24 7" stroke="white" strokeWidth="2.8" fill="none" strokeLinecap="round" />
-        <path d="M 23 25 Q 17 17 13 21" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeOpacity="0.85" />
-        <path d="M 25 25 Q 31 17 35 21" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeOpacity="0.85" />
-        <ellipse cx="24" cy="28" rx="8" ry="5.5" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.9" />
-      </svg>
+    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#fff', border: '1.5px solid #ffe0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+      <img src="/logo.png" alt="Mirror Lake AI" width={24} height={24} style={{ objectFit: 'contain', display: 'block' }} />
     </div>
   );
+}
+
+function parseScore(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'assistant') continue;
+    const m = messages[i].content.match(/\b([4-9]\d{2}|[1-9]\d{2})\s*\/\s*850\b/);
+    if (m) return parseInt(m[1], 10);
+    const m2 = messages[i].content.match(/score[:\s]+([4-9]\d{2})/i);
+    if (m2) return parseInt(m2[1], 10);
+  }
+  return null;
+}
+
+function parseRisk(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'assistant') continue;
+    const c = messages[i].content.toLowerCase();
+    if (c.includes('high risk')) return 'High Risk';
+    if (c.includes('medium risk')) return 'Medium Risk';
+    if (c.includes('low-medium risk') || c.includes('low medium risk')) return 'Low-Medium Risk';
+    if (c.includes('low risk')) return 'Low Risk';
+    // Fall back to score-based classification
+    const scoreMatch = c.match(/(\d{3})\s*\/\s*850/);
+    if (scoreMatch) {
+      const s = parseInt(scoreMatch[1], 10);
+      if (s < 550) return 'High Risk';
+      if (s < 650) return 'Medium Risk';
+      if (s < 750) return 'Low-Medium Risk';
+      return 'Low Risk';
+    }
+  }
+  return 'Medium Risk';
+}
+
+function saveReport(name, sessionId, messages) {
+  const email = localStorage.getItem('mlc_email');
+  const lastAI = [...messages].reverse().find(m => m.role === 'assistant');
+  const summary = lastAI
+    ? lastAI.content.slice(0, 220).replace(/\n/g, ' ').trim() + (lastAI.content.length > 220 ? '…' : '')
+    : 'Assessment complete.';
+  const report = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    date: new Date().toISOString(),
+    email: email || 'guest',
+    name,
+    sessionId,
+    score: parseScore(messages) ?? 700,
+    riskLevel: parseRisk(messages),
+    summary,
+    messages,
+  };
+  const existing = JSON.parse(localStorage.getItem('mlc_reports') || '[]');
+  localStorage.setItem('mlc_reports', JSON.stringify([...existing, report]));
+  return report;
 }
 
 function Chat() {
@@ -63,8 +78,13 @@ function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (!localStorage.getItem('mlc_email')) navigate('/login');
+  }, [navigate]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -74,7 +94,8 @@ function Chat() {
     if (!name.trim()) return;
     setLoading(true);
     try {
-      const data = await startChat(name.trim());
+      const email = localStorage.getItem('mlc_email') || '';
+      const data = await startChat(name.trim(), email);
       setSessionId(data.session_id);
       setMessages([{ role: 'assistant', content: data.reply }]);
       setStarted(true);
@@ -99,6 +120,16 @@ function Chat() {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong connecting to the AI. Please try again.' }]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveReport = () => {
+    if (messages.length === 0) return;
+    const report = saveReport(name, sessionId, messages);
+    setSaved(true);
+    const email = localStorage.getItem('mlc_email');
+    if (email) {
+      navigate(`/report/${report.id}`);
     }
   };
 
@@ -127,8 +158,8 @@ function Chat() {
 
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div style={{ background: '#fff', borderRadius: 24, padding: '48px 40px', maxWidth: 460, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,0.3)', textAlign: 'center' }}>
-            <div style={{ width: 64, height: 64, borderRadius: 20, background: 'linear-gradient(135deg, #BB0000, #CC0000)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', boxShadow: '0 8px 24px rgba(187,0,0,0.3)' }}>
-              <MirrorLakeLogo size={44} />
+            <div style={{ width: 80, height: 80, margin: '0 auto 20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <MirrorLakeLogo size={80} />
             </div>
             <h2 style={{ fontSize: 24, fontWeight: 800, color: '#3d0000', marginBottom: 10, letterSpacing: '-0.02em' }}>
               Build Your Financial Resume
@@ -231,17 +262,25 @@ function Chat() {
       <div style={{ background: '#fff', borderTop: '1px solid #ffe0e0', padding: '16px 24px', boxShadow: '0 -4px 16px rgba(0,0,0,0.05)' }}>
         <div style={{ maxWidth: 700, margin: '0 auto', display: 'flex', gap: 12, alignItems: 'flex-end' }}>
           <button
-            title="Download Financial Resume"
-            style={{ width: 48, height: 48, borderRadius: 14, border: '1.5px solid #ffe0e0', background: '#fff', color: '#BB0000', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s' }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#fff5f5'; e.currentTarget.style.borderColor = '#BB0000'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#ffe0e0'; }}
+            title={saved ? 'Report saved!' : 'Save & View Financial Resume'}
+            onClick={handleSaveReport}
+            disabled={messages.length === 0}
+            style={{ width: 48, height: 48, borderRadius: 14, border: `1.5px solid ${saved ? '#22c55e' : '#ffe0e0'}`, background: saved ? '#f0fdf4' : '#fff', color: saved ? '#22c55e' : '#BB0000', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: messages.length === 0 ? 'default' : 'pointer', flexShrink: 0, transition: 'all 0.2s' }}
+            onMouseEnter={e => { if (!saved) { e.currentTarget.style.background = '#fff5f5'; e.currentTarget.style.borderColor = '#BB0000'; } }}
+            onMouseLeave={e => { if (!saved) { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#ffe0e0'; } }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="12" y1="18" x2="12" y2="12" />
-              <polyline points="9 15 12 18 15 15" />
-            </svg>
+            {saved ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <polyline points="9 15 12 18 15 15" />
+              </svg>
+            )}
           </button>
           <textarea
             ref={textareaRef}
@@ -263,7 +302,7 @@ function Chat() {
           </button>
         </div>
         <div style={{ maxWidth: 700, margin: '8px auto 0', fontSize: 11, color: '#94a3b8', textAlign: 'center' }}>
-          Press Enter to send · Shift+Enter for new line · Your data is analyzed by IBM Granite AI
+          Press Enter to send · Shift+Enter for new line · Click the file icon to save your report
         </div>
       </div>
 

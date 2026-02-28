@@ -1,4 +1,5 @@
 import uuid
+import random
 import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -12,11 +13,18 @@ router = APIRouter()
 _sessions: dict = {}
 
 GREETING_TEMPLATE = (
-    "Hi{name_part}! I'm CreditPath, your AI financial advisor. "
+    "Hi{name_part}! I'm Mirror Lake Credit, your AI financial advisor. "
     "I'm here to help build your Financial Resume using alternate credit data — "
     "so even without a credit card or loan history, we can show lenders who you really are. "
     "{followup}"
 )
+
+FOLLOWUP_OPTIONS = [
+    "To get started — tell me a bit about where you're at right now. Are you working, in school, or somewhere in between?",
+    "Let's get started. What does your day-to-day look like — are you working, studying, or a mix of both?",
+    "To kick things off, what's your current situation — are you employed, in school, or figuring things out?",
+    "Tell me a bit about yourself to start. What does life look like for you right now — job, school, both?",
+]
 
 
 class ChatStart(BaseModel):
@@ -41,7 +49,7 @@ async def start_chat(body: ChatStart):
     name = body.name.strip()
     name_part = f" {name}" if name else ""
     followup = (
-        "To get started, do you currently pay rent each month?"
+        random.choice(FOLLOWUP_OPTIONS)
         if name
         else "Can you tell me your name?"
     )

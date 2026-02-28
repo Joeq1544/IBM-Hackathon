@@ -1,41 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 function MirrorLakeLogo({ size = 40 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="24" cy="24" r="24" fill="url(#logoGrad)" />
-      {/* Lake — large oval filling the whole circle */}
-      <ellipse cx="24" cy="28" rx="21" ry="16" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.45)" strokeWidth="0.9" />
-      {/* Subtle inner shore highlight */}
-      <ellipse cx="24" cy="28" rx="20" ry="15" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.7" />
-      {/* Fountain base — centered in the lake */}
-      <circle cx="24" cy="28" r="2.8" fill="rgba(255,255,255,0.5)" />
-      <circle cx="24" cy="28" r="1.3" fill="rgba(255,255,255,0.78)" />
-      {/* Center jet — tallest, straight up */}
-      <path d="M 24 25 Q 24 16 24 7" stroke="white" strokeWidth="1.9" fill="none" strokeLinecap="round" strokeOpacity="0.93" />
-      <ellipse cx="24" cy="6" rx="1.6" ry="2.2" fill="rgba(255,255,255,0.82)" />
-      {/* Inner arcing jets left & right */}
-      <path d="M 23 25 Q 17 17 13 21" stroke="white" strokeWidth="1.25" fill="none" strokeLinecap="round" strokeOpacity="0.83" />
-      <path d="M 25 25 Q 31 17 35 21" stroke="white" strokeWidth="1.25" fill="none" strokeLinecap="round" strokeOpacity="0.83" />
-      {/* Outer arcing jets */}
-      <path d="M 22.5 26 Q 13 17 8 22" stroke="white" strokeWidth="0.85" fill="none" strokeLinecap="round" strokeOpacity="0.56" />
-      <path d="M 25.5 26 Q 35 17 40 22" stroke="white" strokeWidth="0.85" fill="none" strokeLinecap="round" strokeOpacity="0.56" />
-      {/* Concentric ripples centered at fountain */}
-      <ellipse cx="24" cy="28" rx="4.5" ry="3" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.7" />
-      <ellipse cx="24" cy="28" rx="9.5" ry="6.5" fill="none" stroke="rgba(255,255,255,0.26)" strokeWidth="0.6" />
-      <ellipse cx="24" cy="28" rx="16" ry="11" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="0.5" />
-      {/* Reflection of jets in lower lake — faded, inverted */}
-      <path d="M 24 29 Q 24 36 24 40" stroke="rgba(255,255,255,0.28)" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      <path d="M 23 29 Q 17 34 14 33" stroke="rgba(255,255,255,0.19)" strokeWidth="0.78" fill="none" strokeLinecap="round" />
-      <path d="M 25 29 Q 31 34 34 33" stroke="rgba(255,255,255,0.19)" strokeWidth="0.78" fill="none" strokeLinecap="round" />
-      <defs>
-        <linearGradient id="logoGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#BB0000" />
-          <stop offset="100%" stopColor="#CC0000" />
-        </linearGradient>
-      </defs>
-    </svg>
+    <img src="/logo.png" alt="Mirror Lake Credit" width={size} height={size} style={{ objectFit: 'contain', display: 'block' }} />
   );
 }
 
@@ -56,7 +24,7 @@ function ScorePreviewCard() {
           </div>
         ))}
       </div>
-      
+
     </div>
   );
 }
@@ -77,6 +45,21 @@ const steps = [
 
 function Dashboard() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+
+  useEffect(() => {
+    setEmail(localStorage.getItem('mlc_email') || '');
+  }, []);
+
+  const handleSignOut = () => {
+    localStorage.removeItem('mlc_email');
+    setEmail('');
+  };
+
+  const handleStartChat = () => {
+    if (email) navigate('/chat');
+    else navigate('/login');
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#fff5f5', fontFamily: "'Segoe UI', sans-serif" }}>
@@ -95,9 +78,21 @@ function Dashboard() {
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
             Powered by IBM watsonx
           </span>
-          <button onClick={() => navigate('/chat')} style={{ background: '#BB0000', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            Get Started
-          </button>
+          {email ? (
+            <>
+              <span style={{ fontSize: 13, color: '#475569' }}>{email}</span>
+              <button onClick={() => navigate('/reports')} style={{ background: 'transparent', border: '1px solid #ffe0e0', color: '#BB0000', borderRadius: 8, padding: '9px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                My Reports
+              </button>
+              <button onClick={handleSignOut} style={{ background: 'transparent', border: '1px solid #e2e8f0', color: '#64748b', borderRadius: 8, padding: '9px 16px', fontSize: 14, cursor: 'pointer' }}>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <button onClick={() => navigate('/login')} style={{ background: '#BB0000', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              Get Started
+            </button>
+          )}
         </div>
       </nav>
 
@@ -120,12 +115,12 @@ function Dashboard() {
           </p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <button
-              onClick={() => navigate('/chat')}
+              onClick={handleStartChat}
               style={{ background: '#fff', color: '#BB0000', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(0,0,0,0.2)', transition: 'transform 0.15s, box-shadow 0.15s' }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,0,0,0.25)'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)'; }}
             >
-              Build My Resume →
+              {email ? 'Build My Resume →' : 'Sign In to Start →'}
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ffaaaa', fontSize: 14 }}>
               <span>⚡</span> Takes 3 minutes
@@ -189,10 +184,7 @@ function Dashboard() {
       {/* CTA Banner */}
       <div style={{ background: 'linear-gradient(135deg, #3d0000, #BB0000)', padding: '56px 48px', textAlign: 'center' }}>
         <h2 style={{ fontSize: 32, fontWeight: 800, color: '#fff', marginBottom: 12 }}>Ready to see your reflection?</h2>
-        <p style={{ fontSize: 16, color: '#ffd0d0', marginBottom: 28 }}>Start a conversation with our AI — it only takes a few minutes.</p>
-        <button onClick={() => navigate('/chat')} style={{ background: '#fff', color: '#BB0000', border: 'none', borderRadius: 10, padding: '14px 36px', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
-          Get My Financial Resume →
-        </button>
+        <p style={{ fontSize: 16, color: '#ffd0d0', marginBottom: 0 }}>Start a conversation with our AI — it only takes a few minutes.</p>
       </div>
 
       <footer style={{ background: '#3d0000', padding: '20px 48px', textAlign: 'center', fontSize: 13, color: '#ffaaaa' }}>
