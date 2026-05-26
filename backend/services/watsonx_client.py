@@ -1,91 +1,52 @@
 """
-watsonx_client.py
-Direct IBM watsonx.ai calls for Granite Guardian (bias audit)
-and Granite Instruct (human-readable explanation).
-
-These are called AFTER the Orchestrate agent produces a credit score,
-to add a real bias audit and plain-English explanation layer.
+watsonx_client.py (powered by Google Gemini REST API via httpx — no SDK needed)
+Keeps the same public function signatures so no other files need changing.
 """
 
-import httpx
 import logging
-from config import WATSONX_URL, WATSONX_PROJECT_ID, GRANITE_INSTRUCT_MODEL, GRANITE_GUARDIAN_MODEL
-from services.orchestrate_client import _get_iam_token
+import httpx
+from config import GEMINI_API_KEY, GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
-CHAT_URL = f"{WATSONX_URL}/ml/v1/text/chat?version=2024-05-31"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-async def _call_granite(model_id: str, messages: list, max_tokens: int = 512) -> str:
-    """Generic helper to call any Granite model via watsonx.ai chat API."""
-    token = await _get_iam_token()
+def _convert_messages(messages: list) -> tuple[str, list]:
+    """Split out the system prompt and convert to Gemini REST format."""
+    system_prompt = ""
+    contents = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if role == "system":
+            system_prompt = content
+        elif role == "assistant":
+            contents.append({"role": "model", "parts": [{"text": content}]})
+        else:
+            contents.append({"role": "user", "parts": [{"text": content}]})
+    return system_prompt, contents
 
+
+async def _call_gemini(system_prompt: str, contents: list, max_tokens: int = 1024) -> str:
+    url = GEMINI_URL.format(model=GEMINI_MODEL)
     body = {
-        "model_id": model_id,
-        "messages": messages,
-        "project_id": WATSONX_PROJECT_ID,
-        "parameters": {
-            "max_new_tokens": max_tokens,
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
             "temperature": 0.3,
         },
     }
+    if system_prompt:
+        body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            CHAT_URL,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            json=body,
-        )
+        response = await client.post(url, params={"key": GEMINI_API_KEY}, json=body)
         if not response.is_success:
-            logger.error("watsonx.ai %s %d — %s", model_id, response.status_code, response.text[:400])
+            logger.error("Gemini %d — %s", response.status_code, response.text[:400])
         response.raise_for_status()
 
-    return response.json()["choices"][0]["message"]["content"]
-
-
-async def audit_for_bias(credit_result: str) -> str:
-    """
-    Use Granite Guardian to audit a credit assessment result for demographic bias.
-    Returns a short fairness summary to append to the agent's response.
-    """
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a fairness auditor for AI credit scoring systems. "
-                "Your job is to review credit assessments and verify they contain no demographic bias. "
-                "Protected characteristics that must NOT influence scoring: age, gender, race, ethnicity, "
-                "religion, national origin, disability, marital status, or zip code as a demographic proxy. "
-                "Be concise. Always output a fairness score (0-100) and a one-line certification."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Review this credit assessment for demographic bias:\n\n{credit_result}\n\n"
-                "Respond in exactly this format:\n"
-                "Fairness Score: [0-100]\n"
-                "Findings: [any bias detected, or 'No demographic bias detected']\n"
-                "Certification: [one sentence certifying fairness or flagging a concern]"
-            ),
-        },
-    ]
-
-    try:
-        result = await _call_granite(GRANITE_GUARDIAN_MODEL, messages, max_tokens=200)
-        return result
-    except Exception as e:
-        logger.warning("Granite Guardian audit failed: %s — using default", repr(e))
-        return (
-            "Fairness Score: 98\n"
-            "Findings: No demographic bias detected\n"
-            "Certification: Score is based solely on financial behavior data."
-        )
+    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 
 CHAT_SYSTEM_PROMPT = """You are Mirror Lake Credit, a friendly AI financial advisor helping students
@@ -164,40 +125,54 @@ Never use age/gender/race/zip in scoring."""
 
 
 async def chat_with_granite(messages: list) -> str:
-    """Drive the full credit advisor conversation using IBM Granite 3.2 Instruct."""
+    """Drive the full credit advisor conversation using Gemini."""
     if not messages or messages[0].get("role") != "system":
-        full_messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}] + messages
-    else:
-        full_messages = messages
-    return await _call_granite(GRANITE_INSTRUCT_MODEL, full_messages, max_tokens=1024)
+        messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}] + messages
+    system_prompt, contents = _convert_messages(messages)
+    return await _call_gemini(system_prompt, contents, max_tokens=1024)
+
+
+async def audit_for_bias(credit_result: str) -> str:
+    """Audit a credit assessment result for demographic bias using Gemini."""
+    system_prompt = (
+        "You are a fairness auditor for AI credit scoring systems. "
+        "Your job is to review credit assessments and verify they contain no demographic bias. "
+        "Protected characteristics that must NOT influence scoring: age, gender, race, ethnicity, "
+        "religion, national origin, disability, marital status, or zip code as a demographic proxy. "
+        "Be concise. Always output a fairness score (0-100) and a one-line certification."
+    )
+    contents = [{"role": "user", "parts": [{"text": (
+        f"Review this credit assessment for demographic bias:\n\n{credit_result}\n\n"
+        "Respond in exactly this format:\n"
+        "Fairness Score: [0-100]\n"
+        "Findings: [any bias detected, or 'No demographic bias detected']\n"
+        "Certification: [one sentence certifying fairness or flagging a concern]"
+    )}]}]
+    try:
+        return await _call_gemini(system_prompt, contents, max_tokens=200)
+    except Exception as e:
+        logger.warning("Bias audit failed: %s — using default", repr(e))
+        return (
+            "Fairness Score: 98\n"
+            "Findings: No demographic bias detected\n"
+            "Certification: Score is based solely on financial behavior data."
+        )
 
 
 async def explain_in_plain_english(credit_result: str, user_name: str = "") -> str:
-    """
-    Use Granite Instruct to rewrite the credit result in plain, encouraging language
-    tailored to a student or young adult with no financial background.
-    """
+    """Rewrite the credit result in plain, encouraging language."""
     name_clause = f" for {user_name}" if user_name else ""
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a friendly financial coach helping young adults understand their credit profile. "
-                "Rewrite credit reports in simple, warm, encouraging language. "
-                "Avoid jargon. Use short sentences. Be specific about what they can do next."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Please rewrite this credit assessment{name_clause} in plain, friendly language "
-                f"for someone with no financial background. Keep it under 120 words.\n\n{credit_result}"
-            ),
-        },
-    ]
-
+    system_prompt = (
+        "You are a friendly financial coach helping young adults understand their credit profile. "
+        "Rewrite credit reports in simple, warm, encouraging language. "
+        "Avoid jargon. Use short sentences. Be specific about what they can do next."
+    )
+    contents = [{"role": "user", "parts": [{"text": (
+        f"Please rewrite this credit assessment{name_clause} in plain, friendly language "
+        f"for someone with no financial background. Keep it under 120 words.\n\n{credit_result}"
+    )}]}]
     try:
-        return await _call_granite(GRANITE_INSTRUCT_MODEL, messages, max_tokens=300)
+        return await _call_gemini(system_prompt, contents, max_tokens=300)
     except Exception as e:
-        logger.warning("Granite Instruct explanation failed: %s", repr(e))
+        logger.warning("Plain English explanation failed: %s", repr(e))
         return ""
